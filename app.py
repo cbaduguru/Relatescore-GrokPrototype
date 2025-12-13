@@ -38,7 +38,8 @@ st.markdown(
             padding: 14px;
             margin-bottom: 10px;
         }
-        .logo { text-align:center; margin-bottom: 10px; }
+        .logo { text-align:center; margin-bottom: 10px; overflow: visible !important; }
+        .logo img { display:block; margin: 0 auto; width: 64px; height: 64px; }
         .tagline { text-align:center; color:#3A3A3A; margin-bottom: 18px; }
         .rgi-big { font-size: 54px; font-weight: 800; color: #C6A667; text-align: center; line-height: 1.0; }
         .small-muted { color:#666; font-size: 0.92rem; }
@@ -50,11 +51,16 @@ st.markdown(
 
 # Logo SVG (simple circle with checkmark)
 LOGO_SVG = """
-<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="25" cy="25" r="20" stroke="#C6A667" stroke-width="4" fill="none"/>
-    <path d="M15 25 L22 32 L35 19" stroke="#C6A667" stroke-width="4" fill="none"/>
-</svg>
-<h3 style="color: #1A1A1A; display: inline; margin-left: 10px;">RelateScore™</h3>
+<div class="logo">
+  <img alt="RelateScore logo"
+       src="data:image/svg+xml;utf8,
+<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+  <circle cx='32' cy='32' r='24' stroke='%23C6A667' stroke-width='4' fill='none'/>
+  <path d='M22 32 L29 39 L44 24' stroke='%23C6A667' stroke-width='4' fill='none'
+        stroke-linecap='round' stroke-linejoin='round'/>
+</svg>" />
+  <div style="font-size: 22px; font-weight: 700; margin-top: 6px;">RelateScore™</div>
+</div>
 """
 
 def display_logo():
