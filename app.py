@@ -1,54 +1,55 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+import random
+import string
+import time
 
-# Custom CSS for brand/visual system
-st.markdown("""
-<style>
-    .main {
-        max-width: 400px;
-        margin: 0 auto;
-        background-color: #F5F5F5;
-        padding: 20px;
-        font-family: 'Open Sans', sans-serif;
-    }
-    h1, h2 {
-        font-family: 'Montserrat', sans-serif;
-        color: #1A1A1A;
-    }
-    .stButton > button {
-        background-color: #C6A667;
-        color: #FFFFFF;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 20px;
-    }
-    .stSlider > div > div > div {
-        background-color: #2E6AF3;
-    }
-    .insight-card {
-        background-color: #FFFFFF;
-        border: 1px solid #C6A667;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 10px;
-    }
-    .logo {
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .rgi-big {
-        font-size: 48px;
-        font-weight: bold;
-        color: #C6A667;
-        text-align: center;
-    }
-</style>
-""", unsafe_allow_html=True)
+# ------------------------------------------------------------
+# RelateScore™ Streamlit Prototype (Cloud-safe navigation)
+# - Entry screen: only Create Profile + Log In (no Enter Invite Code)
+# - Home screen: exactly 3 buttons (Create Invite, Enter Invite Code, Withdraw and Reset)
+# - Tip microcopy appears directly under every "Enter Invite Code" button
+# - Invite codes work across sessions on the same Streamlit Cloud instance via shared in-memory store
+# ------------------------------------------------------------
+st.set_page_config(page_title="RelateScore™", page_icon="✅", layout="centered")
+st.set_option("client.showErrorDetails", True)
+
+# -----------------------------
+# Styling
+# -----------------------------
+st.markdown(
+    """
+    <style>
+        .block-container { max-width: 520px; padding-top: 24px; }
+        h1, h2, h3 { color: #1A1A1A; font-family: sans-serif; }
+        .stButton > button {
+            background-color: #C6A667 !important;
+            color: #FFFFFF !important;
+            border-radius: 10px !important;
+            border: none !important;
+            padding: 10px 18px !important;
+            width: 100% !important;
+        }
+        .insight-card {
+            background-color: #FFFFFF;
+            border: 1px solid #C6A667;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+        .logo { text-align:center; margin-bottom: 10px; }
+        .tagline { text-align:center; color:#3A3A3A; margin-bottom: 18px; }
+        .rgi-big { font-size: 54px; font-weight: 800; color: #C6A667; text-align: center; line-height: 1.0; }
+        .small-muted { color:#666; font-size: 0.92rem; }
+        .tip-under-btn { margin-top: -10px; margin-bottom: 14px; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # Logo SVG (simple circle with checkmark)
-logo_svg = """
+LOGO_SVG = """
 <svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
     <circle cx="25" cy="25" r="20" stroke="#C6A667" stroke-width="4" fill="none"/>
     <path d="M15 25 L22 32 L35 19" stroke="#C6A667" stroke-width="4" fill="none"/>
@@ -56,8 +57,71 @@ logo_svg = """
 <h3 style="color: #1A1A1A; display: inline; margin-left: 10px;">RelateScore™</h3>
 """
 
-# Categories from RQ Wheel doc
-categories = [
+def display_logo():
+    st.markdown(LOGO_SVG, unsafe_allow_html=True)
+
+# -----------------------------
+# Rerun compatibility (Cloud safe)
+# -----------------------------
+def _rerun():
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
+def nav(to_page: str):
+    st.session_state.page = to_page
+    _rerun()
+
+# -----------------------------
+# Invite Store (shared across sessions)
+# -----------------------------
+INVITE_TTL_SECONDS = 60 * 30  # 30 minutes
+
+@st.cache_resource
+def get_invite_store():
+    # { CODE: {"created_at": ts, "used": bool} }
+    return {}
+
+def _clean_expired_invites(store: dict):
+    now = time.time()
+    expired = [code for code, meta in store.items()
+               if (now - meta.get("created_at", now)) > INVITE_TTL_SECONDS]
+    for code in expired:
+        store.pop(code, None)
+
+def register_invite(code: str) -> None:
+    store = get_invite_store()
+    _clean_expired_invites(store)
+    store[code] = {"created_at": time.time(), "used": False}
+
+def validate_invite(code: str):
+    """
+    Returns (is_valid, reason)
+    Reasons: ok | missing | expired | used
+    """
+    store = get_invite_store()
+    _clean_expired_invites(store)
+    meta = store.get(code)
+    if not meta:
+        return False, "missing"
+    if (time.time() - meta.get("created_at", time.time())) > INVITE_TTL_SECONDS:
+        store.pop(code, None)
+        return False, "expired"
+    if meta.get("used"):
+        return False, "used"
+    return True, "ok"
+
+def consume_invite(code: str) -> None:
+    store = get_invite_store()
+    meta = store.get(code)
+    if meta:
+        meta["used"] = True
+
+# -----------------------------
+# Data
+# -----------------------------
+CATEGORIES = [
     "Emotional Awareness",
     "Communication Style",
     "Conflict Tendencies",
@@ -68,179 +132,87 @@ categories = [
     "Stability & Consistency"
 ]
 
-# Likert calibration questions (inferred from docs: personal perception scale for each category)
-likert_questions = {}
-for cat in categories:
-    likert_questions[cat] = [
-        f"On a scale of 1-5, how important is {cat.lower()} to you in relationships?",
+LIKERT_QUESTIONS = {
+    cat: [
+        f"On a scale of 1–5, how important is {cat.lower()} to you in relationships?",
         f"How would you rate your current level in {cat.lower()}?",
         f"How often do you reflect on {cat.lower()}?"
     ]
+    for cat in CATEGORIES
+}
 
-# Assessment questions (guided prompts, 1-5 Likert)
-assessment_questions = {}
-for cat in categories:
-    assessment_questions[cat] = [
+ASSESSMENT_QUESTIONS = {
+    cat: [
         f"How often do you recognize patterns in {cat.lower()}?",
         f"How comfortable are you discussing {cat.lower()}?",
         f"How does {cat.lower()} impact your connections?"
     ]
+    for cat in CATEGORIES
+}
 
-# Session state initialization
-if 'page' not in st.session_state:
-    st.session_state.page = 'login'
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'invite_code' not in st.session_state:
-    st.session_state.invite_code = None
-if 'partner_accepted' not in st.session_state:
-    st.session_state.partner_accepted = False
-if 'confirmed' not in st.session_state:
-    st.session_state.confirmed = False
-if 'likert_responses' not in st.session_state:
-    st.session_state.likert_responses = {}
-if 'assessment_responses' not in st.session_state:
-    st.session_state.assessment_responses = {}
-if 'scores' not in st.session_state:
-    st.session_state.scores = None
-if 'insights' not in st.session_state:
-    st.session_state.insights = None
-if 'use_mutual' not in st.session_state:
-    st.session_state.use_mutual = False
+# -----------------------------
+# Session state init
+# -----------------------------
+def init_state():
+    defaults = {
+        "page": "entry",
+        "logged_in": False,
+        "consent_accepted": False,
 
-# Function to display logo on every page
-def display_logo():
-    st.markdown(f'<div class="logo">{logo_svg}</div>', unsafe_allow_html=True)
+        # Invite flow (local convenience)
+        "invite_code": None,  # last generated code in THIS session
+        "partner_code": "",
 
-# Login/Create Profile
-def login_page():
-    display_logo()
-    st.title("RelateScore™")
-    st.write("Relationship clarity without exposure.")
-    if st.button("Create Profile / Log In"):
-        st.session_state.logged_in = True
-        st.session_state.page = 'home'
+        # Assessment flow
+        "use_mutual": False,
+        "likert_responses": {},
+        "assessment_responses": {},
+        "scores": None,
+        "insights": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-# Home Screen
-def home_page():
-    display_logo()
-    st.header("Home")
-    st.write("Your relationships deserve clarity and truth.")
-    if st.button("Create Invite"):
-        st.session_state.invite_code = "INVITE123"  # Simulated code
-        st.session_state.page = 'invite'
+def reset_state():
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    init_state()
 
-# Create Invite
-def invite_page():
-    display_logo()
-    st.header("Invite Partner")
-    st.write("Share this code with your partner who has a RelateScore™ account.")
-    st.code(st.session_state.invite_code)
-    if st.checkbox("Simulate Partner Acceptance (for prototype)"):
-        st.session_state.partner_accepted = True
-        st.session_state.page = 'confirmation'
+init_state()
 
-# Confirmation
-def confirmation_page():
-    display_logo()
-    st.header("Confirm Connection")
-    st.write("Your partner has accepted the invite.")
-    if st.button("Confirm"):
-        st.session_state.confirmed = True
-        st.session_state.page = 'welcome'
-    if st.button("Decline"):
-        st.session_state.page = 'declined'
+# -----------------------------
+# Helpers
+# -----------------------------
+def generate_invite_code(length: int = 8) -> str:
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-# Declined Edge Case
-def declined_page():
-    display_logo()
-    st.header("Connection Not Created")
-    st.write("No connection was created.")
-    if st.button("Return to Home"):
-        st.session_state.page = 'home'
-
-# Welcome Screen
-def welcome_page():
-    display_logo()
-    st.header("Welcome")
-    st.write("Private relational clarity.")
-    st.write("There are no right or wrong answers.")
-    if st.button("Begin Reflection"):
-        st.session_state.page = 'likert'
-
-# Likert Calibration
-def likert_page():
-    display_logo()
-    st.header("Personal Calibration")
-    st.write("Answer with honesty – this sets your personal scale.")
-    for cat in categories:
-        st.subheader(cat)
-        for q in likert_questions[cat]:
-            st.session_state.likert_responses[q] = st.slider(q, 1, 5, 3)
-    if st.button("Proceed to Preview"):
-        st.session_state.page = 'preview'
-
-# Preview (What You'll Get - Figure 2 inferred as outputs preview)
-def preview_page():
-    display_logo()
-    st.header("What You'll Get")
-    st.write("A private Relationship Growth Index (RGI).")
-    st.write("Personalized RQ Wheel showing patterns.")
-    st.write("Insights on strengths, blind spots, and growth areas.")
-    st.write("No public scores, no comparisons – just your clarity.")
-    if st.checkbox("Include simulated mutual reflection?"):
-        st.session_state.use_mutual = True
-    if st.button("Proceed to Assessment"):
-        st.session_state.page = 'assessment'
-
-# Assessment
-def assessment_page():
-    display_logo()
-    st.header("Relational Assessment")
-    st.write("Respond based on what feels true most of the time.")
-    for cat in categories:
-        st.subheader(cat)
-        for q in assessment_questions[cat]:
-            st.session_state.assessment_responses[q] = st.slider(q, 1, 5, 3)
-    if st.button("Submit Assessment"):
-        # Simulate toxicity filter
-        if np.random.rand() < 0.1:
-            st.error("Input blocked for toxicity. Please revise.")
-        else:
-            compute_scores()
-            generate_insights()
-            st.success("Assessment complete!")
-            st.session_state.page = 'dashboard'
-
-# Compute Scores (from engineering spec)
 def compute_scores():
     cat_scores = {}
-    for cat in categories:
-        likert_vals = [st.session_state.likert_responses[q] for q in likert_questions[cat]]
-        assess_vals = [st.session_state.assessment_responses[q] for q in assessment_questions[cat]]
-        # Use Likert for normalization baseline
-        baseline = np.mean(likert_vals) * 20  # 0-100
-        raw = np.sum(assess_vals) / len(assess_vals) * 20
-        score = (raw / baseline) * 50 if baseline > 0 else raw  # Relative to personal scale
-        # Mutual simulation
+    for cat in CATEGORIES:
+        likert_vals = [st.session_state.likert_responses[q] for q in LIKERT_QUESTIONS[cat]]
+        assess_vals = [st.session_state.assessment_responses[q] for q in ASSESSMENT_QUESTIONS[cat]]
+
+        baseline = float(np.mean(likert_vals)) * 20.0
+        raw = float(np.mean(assess_vals)) * 20.0
+
+        score = (raw / baseline) * 50.0 if baseline > 0 else raw
+
         if st.session_state.use_mutual:
-            mutual = np.random.uniform(40, 80)
-            score = 0.4 * score + 0.6 * mutual  # Weight mutual heavier
-        # Outlier dampening (clip)
-        score = np.clip(score, 20, 90)
-        cat_scores[cat] = score
-    # RGI weighted sum (approx weights from doc)
-    weights = np.array([0.15, 0.15, 0.15, 0.1, 0.15, 0.1, 0.1, 0.1])
-    rgi = np.sum(np.array(list(cat_scores.values())) * weights)
-    cat_scores['RGI'] = rgi
+            mutual = float(np.random.uniform(40, 80))
+            score = 0.4 * score + 0.6 * mutual
+
+        cat_scores[cat] = float(np.clip(score, 20, 90))
+
+    weights = np.array([0.15, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10, 0.10], dtype=float)
+    rgi = float(np.sum(np.array([cat_scores[c] for c in CATEGORIES], dtype=float) * weights))
+    cat_scores["RGI"] = rgi
     st.session_state.scores = cat_scores
 
-# Generate Insights (thresholds from spec)
 def generate_insights():
     insights = []
-    for cat, score in st.session_state.scores.items():
-        if cat == 'RGI':
-            continue
+    for cat in CATEGORIES:
+        score = st.session_state.scores.get(cat, 0)
         if score > 70:
             type_ = "Strength"
             desc = "This is a strong foundation to build on."
@@ -250,71 +222,297 @@ def generate_insights():
         else:
             type_ = "Neutral"
             desc = "Balanced area with room for awareness."
-        insights.append({"category": cat, "type": type_, "description": desc, "suggestion": "Consider experimenting with this new approach."})
+        insights.append({
+            "category": cat,
+            "type": type_,
+            "description": desc,
+            "suggestion": "Consider a small experiment this week to shift this pattern by 1%."
+        })
     st.session_state.insights = insights
 
-# Dashboard
+def tip_microcopy():
+    st.markdown(
+        "<div class='small-muted tip-under-btn'>Tip: If you're joining via code, the sender must generate one first.</div>",
+        unsafe_allow_html=True
+    )
+
+# ------------------------------------------------------------
+# Pages
+# ------------------------------------------------------------
+def entry_page():
+    display_logo()
+    st.markdown('<div class="tagline">Private reflection. Shared only by choice.</div>', unsafe_allow_html=True)
+
+    if st.button("Create Profile", key="entry_create"):
+        nav("create_profile")
+
+    if st.button("Log In", key="entry_login"):
+        nav("log_in")
+
+def create_profile_page():
+    display_logo()
+    st.header("Create your private profile")
+    st.write("Your responses are encrypted and visible only by choice.")
+
+    st.session_state.consent_accepted = st.checkbox(
+        "I understand that my reflections are private, encrypted, and can be deleted at any time.",
+        value=st.session_state.consent_accepted,
+        key="consent_checkbox"
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="create_back"):
+            nav("entry")
+    with c2:
+        if st.button("Continue", key="create_continue", disabled=not st.session_state.consent_accepted):
+            st.session_state.logged_in = True
+            nav("home")
+
+def log_in_page():
+    display_logo()
+    st.header("Welcome back")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="login_back"):
+            nav("entry")
+    with c2:
+        if st.button("Log In", key="login_go"):
+            st.session_state.logged_in = True
+            nav("home")
+
+def home_page():
+    """
+    Home shows exactly 3 buttons:
+      1) Create Invite
+      2) Enter Invite Code (with tip microcopy underneath)
+      3) Withdraw and Reset
+    """
+    display_logo()
+    st.header("Home")
+
+    if not st.session_state.logged_in:
+        st.warning("Please log in or create a profile to continue.")
+        if st.button("Return to Entry", key="home_return_entry"):
+            nav("entry")
+        return
+
+    if st.button("Create Invite", key="home_create_invite"):
+        code = generate_invite_code()
+        st.session_state.invite_code = code
+        register_invite(code)
+        nav("create_invite")
+
+    if st.button("Enter Invite Code", key="home_enter_invite"):
+        nav("enter_invite")
+    tip_microcopy()
+
+    if st.button("Withdraw and Reset", key="home_reset"):
+        reset_state()
+        nav("entry")
+
+def create_invite_page():
+    display_logo()
+    st.header("Create Invite")
+
+    if not st.session_state.invite_code:
+        code = generate_invite_code()
+        st.session_state.invite_code = code
+        register_invite(code)
+
+    st.write("Share this invitation code privately with your partner:")
+    st.code(st.session_state.invite_code)
+
+    st.markdown(
+        f"<div class='small-muted'>This code expires in {INVITE_TTL_SECONDS//60} minutes and can be used once.</div>",
+        unsafe_allow_html=True
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back to Home", key="invite_back_home"):
+            nav("home")
+    with c2:
+        if st.button("Enter Invite Code", key="invite_go_enter"):
+            nav("enter_invite")
+    tip_microcopy()
+
+def enter_invite_page():
+    display_logo()
+    st.header("Enter Invite")
+    st.write("Entering the invitation code transitions you into the full application experience.")
+
+    st.session_state.partner_code = st.text_input(
+        "Invitation code",
+        value=st.session_state.partner_code,
+        key="partner_code_input"
+    ).strip().upper()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="enter_invite_back"):
+            nav("home" if st.session_state.logged_in else "entry")
+    with c2:
+        if st.button("Continue", key="enter_invite_continue"):
+            if not st.session_state.partner_code:
+                st.error("Please enter a code.")
+                return
+
+            is_ok, reason = validate_invite(st.session_state.partner_code)
+            if is_ok:
+                consume_invite(st.session_state.partner_code)
+                nav("reflection_start")
+            else:
+                if reason == "expired":
+                    st.error("This code has expired. Ask the sender to generate a new one.")
+                elif reason == "used":
+                    st.error("This code has already been used. Ask the sender to generate a new one.")
+                else:
+                    st.error("Code not recognized. Ask the sender to generate a new code and share it again.")
+
+def reflection_start_page():
+    display_logo()
+    st.header("Begin when ready")
+    st.write("There are no right or wrong answers.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="refstart_back"):
+            nav("home" if st.session_state.logged_in else "entry")
+    with c2:
+        if st.button("Start Reflection", key="refstart_go"):
+            nav("likert")
+
+def likert_page():
+    display_logo()
+    st.header("Personal Calibration")
+
+    for cat_i, cat in enumerate(CATEGORIES):
+        st.subheader(cat)
+        for q_i, q in enumerate(LIKERT_QUESTIONS[cat]):
+            st.session_state.likert_responses[q] = st.slider(
+                q, 1, 5, 3, key=f"likert_{cat_i}_{q_i}"
+            )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="likert_back"):
+            nav("reflection_start")
+    with c2:
+        if st.button("Proceed", key="likert_next"):
+            nav("preview")
+
+def preview_page():
+    display_logo()
+    st.header("Preview")
+
+    st.write("You will receive:")
+    st.write("- A private Relationship Growth Index (RGI)")
+    st.write("- A wheel showing patterns")
+    st.write("- Strengths, blind spots, and growth areas")
+
+    st.session_state.use_mutual = st.checkbox(
+        "Include simulated mutual reflection?",
+        value=st.session_state.use_mutual,
+        key="mutual_checkbox"
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="preview_back"):
+            nav("likert")
+    with c2:
+        if st.button("Proceed to Assessment", key="preview_next"):
+            nav("assessment")
+
+def assessment_page():
+    display_logo()
+    st.header("Relational Assessment")
+
+    for cat_i, cat in enumerate(CATEGORIES):
+        st.subheader(cat)
+        for q_i, q in enumerate(ASSESSMENT_QUESTIONS[cat]):
+            st.session_state.assessment_responses[q] = st.slider(
+                q, 1, 5, 3, key=f"assess_{cat_i}_{q_i}"
+            )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Back", key="assess_back"):
+            nav("preview")
+    with c2:
+        if st.button("Submit", key="assess_submit"):
+            if np.random.rand() < 0.1:
+                st.error("Input blocked for toxicity. Please revise.")
+            else:
+                compute_scores()
+                generate_insights()
+                nav("dashboard")
+
 def dashboard_page():
     display_logo()
-    st.header("Your Relational Dashboard")
-    st.write("Your relational clarity at a glance.")
-    # Big bold RGI
-    st.markdown(f'<div class="rgi-big">{st.session_state.scores["RGI"]:.1f}</div>', unsafe_allow_html=True)
-    st.write("Relationship Growth Index")
-    # RQ Wheel
-    scores = st.session_state.scores
-    labels = np.array(categories)
-    values = np.array([scores[cat] for cat in categories])
-    num_vars = len(labels)
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    values = np.concatenate((values, [values[0]]))
-    angles += angles[:1]
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    ax.fill(angles, values, color='#A6E3DA', alpha=0.25)
-    ax.plot(angles, values, color='#C6A667', linewidth=2)
-    ax.set_yticklabels([])
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=12)
-    st.pyplot(fig)
-    # Key Insights
-    st.header("Key Insights")
-    for insight in st.session_state.insights:
-        st.markdown(f"""
-        <div class="insight-card">
-            <h3>{insight['category']}: {insight['type']}</h3>
-            <p>{insight['description']}</p>
-            <p><i>Suggestion: {insight['suggestion']}</i></p>
-        </div>
-        """, unsafe_allow_html=True)
-    # Daily Reflection
-    st.header("Daily Reflection")
-    st.write("Take a moment to reflect...")
-    st.text_area("Your thoughts")
-    if st.button("Save"):
-        st.success("Saved.")
-    # Withdraw & Reset
-    if st.button("Withdraw & Reset"):
-        st.session_state.scores = None
-        st.session_state.insights = None
-        st.session_state.page = 'home'
-        st.warning("All data erased.")
+    st.header("Dashboard")
 
-# Page Router
-pages = {
-    'login': login_page,
-    'home': home_page,
-    'invite': invite_page,
-    'confirmation': confirmation_page,
-    'declined': declined_page,
-    'welcome': welcome_page,
-    'likert': likert_page,
-    'preview': preview_page,
-    'assessment': assessment_page,
-    'dashboard': dashboard_page
+    if not st.session_state.scores:
+        st.warning("No results found yet. Please complete the assessment.")
+        if st.button("Go to Assessment", key="dash_go_assessment"):
+            nav("assessment")
+        return
+
+    st.markdown(f"<div class='rgi-big'>{st.session_state.scores['RGI']:.1f}</div>", unsafe_allow_html=True)
+    st.caption("Relationship Growth Index")
+
+    scores = st.session_state.scores
+    values = np.array([scores[cat] for cat in CATEGORIES], dtype=float)
+    angles = np.linspace(0, 2 * np.pi, len(CATEGORIES), endpoint=False).tolist()
+    values_loop = np.concatenate((values, [values[0]]))
+    angles_loop = angles + angles[:1]
+
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    ax.fill(angles_loop, values_loop, alpha=0.25)
+    ax.plot(angles_loop, values_loop, linewidth=2)
+    ax.set_yticklabels([])
+    ax.set_xticks(angles)
+    ax.set_xticklabels(np.array(CATEGORIES), fontsize=10)
+    st.pyplot(fig)
+
+    st.subheader("Key Insights")
+    for insight in (st.session_state.insights or []):
+        st.markdown(
+            f"""
+            <div class="insight-card">
+                <div style="font-weight:700;">{insight['category']}: {insight['type']}</div>
+                <div>{insight['description']}</div>
+                <div><i>Suggestion: {insight['suggestion']}</i></div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    if st.button("Withdraw and Reset", key="dash_reset"):
+        reset_state()
+        nav("entry")
+
+    if st.button("Return to Home", key="dash_home"):
+        nav("home")
+
+# -----------------------------
+# Router
+# -----------------------------
+PAGES = {
+    "entry": entry_page,
+    "create_profile": create_profile_page,
+    "log_in": log_in_page,
+    "home": home_page,
+    "create_invite": create_invite_page,
+    "enter_invite": enter_invite_page,
+    "reflection_start": reflection_start_page,
+    "likert": likert_page,
+    "preview": preview_page,
+    "assessment": assessment_page,
+    "dashboard": dashboard_page,
 }
 
-if st.session_state.page in pages:
-    pages[st.session_state.page]()
-else:
-    st.error("Invalid page.")
-    st.session_state.page = 'login'
+page = st.session_state.get("page", "entry")
+PAGES.get(page, entry_page)()
