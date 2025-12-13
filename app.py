@@ -55,6 +55,20 @@ def display_logo():
     st.markdown(logo_svg, unsafe_allow_html=True)
 
 # -----------------------------
+# Rerun compatibility (Streamlit Cloud safe)
+# -----------------------------
+def _rerun():
+    # Streamlit Cloud may be on an older version where st.rerun() doesn't exist
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
+def nav(to_page: str):
+    st.session_state.page = to_page
+    _rerun()
+
+# -----------------------------
 # Data
 # -----------------------------
 categories = [
@@ -101,8 +115,7 @@ def init_state():
         "likert_responses": {},
         "assessment_responses": {},
         "scores": None,
-        "insights": None,
-        "last_error": ""
+        "insights": None
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -121,10 +134,6 @@ init_state()
 # -----------------------------
 # Helpers
 # -----------------------------
-def nav(to_page: str):
-    st.session_state.page = to_page
-    st.rerun()
-
 def generate_invite_code(length=8):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
@@ -137,7 +146,6 @@ def compute_scores():
         baseline = float(np.mean(likert_vals)) * 20.0
         raw = float(np.mean(assess_vals)) * 20.0
 
-        # Guard against divide-by-zero
         score = (raw / baseline) * 50.0 if baseline > 0 else raw
 
         if st.session_state.use_mutual:
@@ -191,16 +199,17 @@ def entry_page():
 
     st.markdown("<div class='small-muted'>Tip: If you're joining via code, the sender must generate one first.</div>", unsafe_allow_html=True)
 
-
 def create_profile_page():
     display_logo()
     st.header("Create your private profile")
     st.write("Your responses are encrypted and visible only to you unless you choose to share.")
+
     st.session_state.consent_accepted = st.checkbox(
         "I understand that my reflections are private, encrypted, and can be deleted at any time.",
         value=st.session_state.consent_accepted,
         key="consent_checkbox"
     )
+
     st.write("No public profiles. No social exposure.")
 
     c1, c2 = st.columns(2)
@@ -211,7 +220,6 @@ def create_profile_page():
         if st.button("Continue", key="create_continue", disabled=not st.session_state.consent_accepted):
             st.session_state.logged_in = True
             nav("home")
-
 
 def log_in_page():
     display_logo()
@@ -228,7 +236,6 @@ def log_in_page():
             nav("home")
 
     st.markdown("<div class='small-muted'>Access is limited to you and invited participants only.</div>", unsafe_allow_html=True)
-
 
 def home_page():
     display_logo()
@@ -251,7 +258,6 @@ def home_page():
 
     st.markdown("<div class='small-muted'>Invitations are one-time use and expire automatically.</div>", unsafe_allow_html=True)
 
-
 def create_invite_page():
     display_logo()
     st.header("Invite")
@@ -271,13 +277,12 @@ def create_invite_page():
         if st.button("Done", key="invite_done"):
             nav("home")
 
-
 def partner_entry_page():
     display_logo()
     st.header("Enter invitation code")
     st.write("This code connects you to a shared reflection space—nothing is visible without consent.")
 
-    # Critical fix: if no invite exists in this session, don't claim "expired".
+    # If no invite exists in this session, don't claim "expired".
     if st.session_state.invite_code is None:
         st.info("No active invite exists in this session yet. Ask the sender to generate a code (Home → Create Invite) and share it with you.")
         if st.button("Return to Entry", key="partner_no_invite_back"):
@@ -302,11 +307,11 @@ def partner_entry_page():
             else:
                 st.error("Code not recognized. Ask the sender to generate a new code and share it again.")
 
-
 def invite_accepted_page():
     display_logo()
     st.success("Connection established.")
     st.write("You may begin reflection at your own pace.")
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Back", key="accepted_back"):
@@ -314,7 +319,6 @@ def invite_accepted_page():
     with c2:
         if st.button("Start Reflection", key="accepted_start"):
             nav("reflection_start")
-
 
 def reflection_start_page():
     display_logo()
@@ -332,16 +336,18 @@ def reflection_start_page():
 
     st.markdown("<div class='small-muted'>Progress is saved automatically.</div>", unsafe_allow_html=True)
 
-
 def likert_page():
     display_logo()
     st.header("Personal Calibration")
     st.write("Answer with honesty – this sets your personal scale.")
 
-    for cat in categories:
+    # Deterministic keys (no hash)
+    for cat_i, cat in enumerate(categories):
         st.subheader(cat)
-        for q in likert_questions[cat]:
-            st.session_state.likert_responses[q] = st.slider(q, 1, 5, 3, key=f"likert_{hash(q)}")
+        for q_i, q in enumerate(likert_questions[cat]):
+            st.session_state.likert_responses[q] = st.slider(
+                q, 1, 5, 3, key=f"likert_{cat_i}_{q_i}"
+            )
 
     c1, c2 = st.columns(2)
     with c1:
@@ -350,7 +356,6 @@ def likert_page():
     with c2:
         if st.button("Proceed to Preview", key="likert_next"):
             nav("preview")
-
 
 def preview_page():
     display_logo()
@@ -374,16 +379,18 @@ def preview_page():
         if st.button("Proceed to Assessment", key="preview_next"):
             nav("assessment")
 
-
 def assessment_page():
     display_logo()
     st.header("Relational Assessment")
     st.write("Respond based on what feels true most of the time.")
 
-    for cat in categories:
+    # Deterministic keys (no hash)
+    for cat_i, cat in enumerate(categories):
         st.subheader(cat)
-        for q in assessment_questions[cat]:
-            st.session_state.assessment_responses[q] = st.slider(q, 1, 5, 3, key=f"assess_{hash(q)}")
+        for q_i, q in enumerate(assessment_questions[cat]):
+            st.session_state.assessment_responses[q] = st.slider(
+                q, 1, 5, 3, key=f"assess_{cat_i}_{q_i}"
+            )
 
     c1, c2 = st.columns(2)
     with c1:
@@ -391,14 +398,13 @@ def assessment_page():
             nav("preview")
     with c2:
         if st.button("Submit Assessment", key="assess_submit"):
-            # Keep your simulated gate, but make it deterministic for UX if you want.
+            # Keep simulated gate
             if np.random.rand() < 0.1:
                 st.error("Input blocked for toxicity. Please revise.")
             else:
                 compute_scores()
                 generate_insights()
                 nav("dashboard")
-
 
 def dashboard_page():
     display_logo()
@@ -467,7 +473,6 @@ def dashboard_page():
 
     if st.button("Return to Home", key="dash_home"):
         nav("home")
-
 
 # -----------------------------
 # Router
