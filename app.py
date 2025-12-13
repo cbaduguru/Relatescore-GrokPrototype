@@ -289,9 +289,20 @@ def dashboard_page():
     # Daily Reflection
     st.header("Daily Reflection")
     st.write("Take a moment to reflect...")
-    st.text_area("Your thoughts")
+    reflection_text = st.text_area("Your thoughts")
     if st.button("Save"):
-        st.success("Saved.")
+        st.success("Reflection saved. Carry this insight forward.")
+        if st.button("Generate Insight"):
+            # Simple simulated AI insight (basic keyword check)
+            if 'emotion' in reflection_text.lower():
+                insight = "Your reflection highlights growth in Emotional Awareness."
+            elif 'communication' in reflection_text.lower():
+                insight = "This ties to your Communication Style patterns."
+            else:
+                insight = "Balanced reflection – patterns evolve as you grow."
+            st.info(insight)
+        # Refresh dashboard (simulated by rerun)
+        st.experimental_rerun()
     # Withdraw & Reset
     if st.button("Withdraw & Reset"):
         st.session_state.scores = None
