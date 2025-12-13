@@ -242,6 +242,15 @@ def tip_microcopy():
 # ------------------------------------------------------------
 # Pages
 # ------------------------------------------------------------
+
+def home_footer_microcopy():
+    st.markdown(
+        "<hr style='margin-top:32px;margin-bottom:12px;'>"
+        "<div class='small-muted' style='text-align:center;'>"
+        "RelateScore™ provides private relational clarity that supports growth without judgment or exposure."
+        "</div>",
+        unsafe_allow_html=True
+    )
 def entry_page():
     display_logo()
     st.markdown('<div class="tagline">Private reflection. Shared only by choice.</div>', unsafe_allow_html=True)
@@ -314,6 +323,9 @@ def home_page():
     if st.button("Withdraw and Reset", key="home_reset"):
         reset_state()
         nav("entry")
+
+    home_footer_microcopy()
+
 
 def create_invite_page():
     display_logo()
