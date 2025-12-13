@@ -7,10 +7,10 @@ import time
 
 # ------------------------------------------------------------
 # RelateScore™ Streamlit Prototype (Cloud-safe navigation)
-# Fix: Invite codes must work across sessions (not just st.session_state)
-# Approach: In-memory shared invite store (st.cache_resource singleton)
-# Note: This is MVP-grade. It survives across sessions on the same app instance,
-# but resets on redeploy/reboot and may not persist across multiple replicas.
+# - Entry screen: only Create Profile + Log In (no Enter Invite Code)
+# - Home screen: exactly 3 buttons (Create Invite, Enter Invite Code, Withdraw and Reset)
+# - Tip microcopy appears directly under every "Enter Invite Code" button
+# - Invite codes work across sessions on the same Streamlit Cloud instance via shared in-memory store
 # ------------------------------------------------------------
 st.set_page_config(page_title="RelateScore™", page_icon="✅", layout="centered")
 st.set_option("client.showErrorDetails", True)
@@ -42,6 +42,7 @@ st.markdown(
         .tagline { text-align:center; color:#3A3A3A; margin-bottom: 18px; }
         .rgi-big { font-size: 54px; font-weight: 800; color: #C6A667; text-align: center; line-height: 1.0; }
         .small-muted { color:#666; font-size: 0.92rem; }
+        .tip-under-btn { margin-top: -10px; margin-bottom: 14px; }
     </style>
     """,
     unsafe_allow_html=True
@@ -76,7 +77,7 @@ def nav(to_page: str):
 # -----------------------------
 # Invite Store (shared across sessions)
 # -----------------------------
-INVITE_TTL_SECONDS = 60 * 30  # 30 minutes (MVP default)
+INVITE_TTL_SECONDS = 60 * 30  # 30 minutes
 
 @st.cache_resource
 def get_invite_store():
@@ -85,7 +86,8 @@ def get_invite_store():
 
 def _clean_expired_invites(store: dict):
     now = time.time()
-    expired = [code for code, meta in store.items() if (now - meta.get("created_at", now)) > INVITE_TTL_SECONDS]
+    expired = [code for code, meta in store.items()
+               if (now - meta.get("created_at", now)) > INVITE_TTL_SECONDS]
     for code in expired:
         store.pop(code, None)
 
@@ -94,7 +96,7 @@ def register_invite(code: str) -> None:
     _clean_expired_invites(store)
     store[code] = {"created_at": time.time(), "used": False}
 
-def validate_invite(code: str) -> tuple[bool, str]:
+def validate_invite(code: str):
     """
     Returns (is_valid, reason)
     Reasons: ok | missing | expired | used
@@ -159,7 +161,7 @@ def init_state():
         "consent_accepted": False,
 
         # Invite flow (local convenience)
-        "invite_code": None,     # last generated code in THIS session (also stored globally)
+        "invite_code": None,  # last generated code in THIS session
         "partner_code": "",
 
         # Assessment flow
@@ -229,6 +231,12 @@ def generate_insights():
         })
     st.session_state.insights = insights
 
+def tip_microcopy():
+    st.markdown(
+        "<div class='small-muted tip-under-btn'>Tip: If you're joining via code, the sender must generate one first.</div>",
+        unsafe_allow_html=True
+    )
+
 # ------------------------------------------------------------
 # Pages
 # ------------------------------------------------------------
@@ -241,11 +249,6 @@ def entry_page():
 
     if st.button("Log In", key="entry_login"):
         nav("log_in")
-
-    if st.button("Enter Invite Code", key="entry_invite"):
-        nav("enter_invite")
-
-    st.markdown("<div class='small-muted'>Tip: If you're joining via code, the sender must generate one first.</div>", unsafe_allow_html=True)
 
 def create_profile_page():
     display_logo()
@@ -281,6 +284,12 @@ def log_in_page():
             nav("home")
 
 def home_page():
+    """
+    Home shows exactly 3 buttons:
+      1) Create Invite
+      2) Enter Invite Code (with tip microcopy underneath)
+      3) Withdraw and Reset
+    """
     display_logo()
     st.header("Home")
 
@@ -293,11 +302,12 @@ def home_page():
     if st.button("Create Invite", key="home_create_invite"):
         code = generate_invite_code()
         st.session_state.invite_code = code
-        register_invite(code)  # IMPORTANT: store globally so other sessions can validate
+        register_invite(code)
         nav("create_invite")
 
-    if st.button("Enter Invite", key="home_enter_invite"):
+    if st.button("Enter Invite Code", key="home_enter_invite"):
         nav("enter_invite")
+    tip_microcopy()
 
     if st.button("Withdraw and Reset", key="home_reset"):
         reset_state()
@@ -325,8 +335,9 @@ def create_invite_page():
         if st.button("Back to Home", key="invite_back_home"):
             nav("home")
     with c2:
-        if st.button("Enter Invite", key="invite_go_enter"):
+        if st.button("Enter Invite Code", key="invite_go_enter"):
             nav("enter_invite")
+    tip_microcopy()
 
 def enter_invite_page():
     display_logo()
