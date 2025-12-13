@@ -130,6 +130,8 @@ def entry_page():
         st.session_state.page = 'create_profile'
     if st.button("Log In"):
         st.session_state.page = 'log_in'
+    if st.button("Enter Invite Code"):
+        st.session_state.page = 'partner_entry'
 
 # Create Profile Screen
 def create_profile_page():
@@ -171,7 +173,7 @@ def create_invite_page():
     if st.button("Done"):
         st.session_state.page = 'home'
 
-# Partner Entry Screen (for simulate partner)
+# Partner Entry Screen
 def partner_entry_page():
     display_logo()
     st.header("Enter invitation code")
@@ -182,7 +184,7 @@ def partner_entry_page():
             st.session_state.partner_accepted = True
             st.session_state.page = 'invite_accepted'
         else:
-            st.error("This code is expired or invalid.")
+            st.error("This invitation has expired. Ask the sender to generate a new one.")
             if st.button("Return to Home"):
                 st.session_state.page = 'home'
 
@@ -203,6 +205,14 @@ def reflection_start_page():
     if st.button("Start Reflection"):
         st.session_state.page = 'likert'
     st.write("Progress is saved automatically.")
+
+# Declined Edge Case
+def declined_page():
+    display_logo()
+    st.header("The invitation was declined.")
+    st.write("No data was shared.")
+    if st.button("Return to Home"):
+        st.session_state.page = 'home'
 
 # Likert Calibration
 def likert_page():
@@ -341,7 +351,7 @@ def dashboard_page():
         st.session_state.scores = None
         st.session_state.insights = None
         st.session_state.page = 'home'
-        st.warning("All data erased.")
+        st.warning("Connection ended. All shared access has been revoked.")
 
 # Page Router
 pages = {
