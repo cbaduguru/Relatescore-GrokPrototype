@@ -50,9 +50,9 @@ st.markdown(
 
 LOGO_SVG = """
 <div class="logo">
-<svg width="56" height="56" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="25" cy="25" r="20" stroke="#C6A667" stroke-width="4" fill="none"/>
-    <path d="M15 25 L22 32 L35 19" stroke="#C6A667" stroke-width="4" fill="none"/>
+<svg width="56" height="56" viewBox="-4 -4 64 64" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto;overflow:visible;">
+    <circle cx="28" cy="28" r="22" stroke="#C6A667" stroke-width="4" fill="none"/>
+    <path d="M18 28 L25 35 L38 22" stroke="#C6A667" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 <div style="font-size: 22px; font-weight: 700; margin-top: 6px;">RelateScore™</div>
 </div>
