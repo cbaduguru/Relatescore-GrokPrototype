@@ -178,55 +178,65 @@ def draw_rq_wheel(ax, categories, scores_dict):
     """Draw an RQ Wheel with per-category colors + wedge fills."""
     n = len(categories)
     angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    values = np.array([float(scores_dict[c]) for c in categories], dtype=float)
+    values = np.array([float(scores_dict.get(c, 50.0)) for c in categories], dtype=float)  # Default to 50 if missing
 
     # Close the polygon
     angles_loop = np.concatenate([angles, [angles[0]]])
     values_loop = np.concatenate([values, [values[0]]])
 
-    # Background + grid styling
-    ax.set_facecolor("#FAF7F2")
-    ax.grid(True, linewidth=0.8, alpha=0.25, color="#C9A96E")
-    ax.spines["polar"].set_color("#C9A96E")
-    ax.spines["polar"].set_alpha(0.25)
-    ax.set_ylim(0, 100)
-    ax.set_yticks([20, 40, 60, 80, 100])
-    ax.set_yticklabels([])
+    # Set theta zero to North (top)
+    ax.set_theta_zero_location('N')
 
-    # Colored wedges per category (gives the "real-time" multi-color feel)
+    # Background + hide default grid/spines
+    ax.set_facecolor("#FAF7F2")
+    ax.grid(False)
+    ax.spines['polar'].set_visible(False)
+    ax.set_ylim(0, 110)  # Extra space for labels if needed
+    ax.set_yticks([])
+    ax.set_xticks([])
+
+    # Draw bold gold radial lines up to each vertex
+    for i in range(n):
+        angle = angles[i]
+        ax.plot([angle, angle], [0, values[i]], color='#C9A96E', linewidth=3, zorder=1)
+
+    # Colored wedges per category (simulated gradient via blend and alpha)
     for i in range(n):
         a0 = angles[i]
         a1 = angles[(i + 1) % n]
         v0 = values[i]
         v1 = values[(i + 1) % n]
 
-        # Handle wrap-around for the last wedge
         if i == n - 1:
-            a1 = angles[0] + 2 * np.pi
+            a1 += 2 * np.pi
 
-        col = _category_dynamic_color(categories[i], v0)
-        ax.fill([a0, a0, a1, a1], [0, v0, v1, 0], color=col, alpha=0.22, linewidth=0)
+        # Use average score for color intensity
+        avg_v = (v0 + v1) / 2.0
+        col = _category_dynamic_color(categories[i], avg_v)
+        ax.fill([a0, a0, a1, a1], [0, v0, v1, 0], color=col, alpha=0.25, linewidth=0, zorder=0)
 
-    # Outline polygon (neutral premium stroke)
-    ax.plot(angles_loop, values_loop, linewidth=2.2, alpha=0.9, color="#C9A96E")
+    # Outline polygon (gold, bold)
+    ax.plot(angles_loop, values_loop, linewidth=3, color="#C9A96E", zorder=2)
 
-    # Markers per axis in category color
-    for i, cat in enumerate(categories):
-        v = float(values[i])
-        mcol = _category_dynamic_color(cat, v)
-        ax.scatter([angles[i]], [v], s=60, c=[mcol], edgecolors="#1A1A1A", linewidths=0.6, zorder=5)
+    # Center gold marker
+    ax.scatter(0, 0, marker='o', s=50, color='#FFD700', zorder=3)
 
-    # Category labels, colored to match
-    ax.set_xticks(angles)
-    labels = []
-    for i, cat in enumerate(categories):
-        v = float(values[i])
-        labels.append(cat)
-        # Apply colored tick labels after set_xticklabels
-    ax.set_xticklabels(labels, fontsize=10)
-    for tick, cat in zip(ax.get_xticklabels(), categories):
-        tick.set_color(CATEGORY_COLORS.get(cat, "#1A1A1A"))
-        tick.set_fontweight("medium")
+    # Add labels and hex codes inside sectors (horizontal, bold black)
+    for i in range(n):
+        mid_angle = (angles[i] + angles[(i + 1) % n]) / 2.0
+        if mid_angle > 2 * np.pi:
+            mid_angle -= 2 * np.pi
+
+        avg_v = (values[i] + values[(i + 1) % n]) / 2.0
+        label_r = avg_v * 0.45 + 10  # Position inside, adjusted for low scores
+        hex_r = avg_v * 0.65 + 10    # Hex above label
+
+        # Hex code
+        hex_code = CATEGORY_COLORS.get(categories[i], "#000000")
+        ax.text(mid_angle, hex_r, hex_code, ha='center', va='center', fontsize=8, color='black', zorder=4)
+
+        # Category label (bold black)
+        ax.text(mid_angle, label_r, categories[i], ha='center', va='center', fontsize=10, fontweight='bold', color='black', zorder=4)
 
 LIKERT_QUESTIONS = {
     cat: [
@@ -682,7 +692,7 @@ def dashboard_page():
     scores = st.session_state.scores
     fig, ax = plt.subplots(figsize=(6.3, 6.3), subplot_kw=dict(polar=True))
     draw_rq_wheel(ax, CATEGORIES, scores)
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig)
 
     st.subheader("Key Insights")
     for insight in (st.session_state.insights or []):
