@@ -171,10 +171,6 @@ def init_state():
         "likert_responses": {},
         "assessment_responses": {},
         "scores": None,
-        "raw_scores": None,
-        "prev_scores": None,
-        "prev_scores_ts": None,
-        "score_history": [],
         "insights": None,
     }
     for k, v in defaults.items():
@@ -191,72 +187,11 @@ init_state()
 # -----------------------------
 # Helpers
 # -----------------------------
-# -----------------------------
-# Stability Smoothing (EMA + Dampening)
-# Notes:
-# - In this Streamlit prototype we store prior scores in session_state (per browser session).
-# - In production, persist these per-user in your backend so smoothing is consistent across devices/sessions.
-EMA_ALPHA = 0.25  # 0<alpha<=1; lower = smoother, higher = more responsive
-MAX_DAILY_CHANGE = 15.0  # max allowed change in score points per day (per category)
-MIN_CHANGE_FLOOR = 2.0   # minimum allowed change even if dt is very small (prevents "stuck" feeling)
-OUTLIER_SOFT_THRESHOLD = 25.0  # deltas above this get compressed ("dampened")
-
-def _now_ts() -> float:
-    return time.time()
-
-def _dt_days(prev_ts: float | None) -> float:
-    if not prev_ts:
-        return 1.0
-    dt = max(0.0, _now_ts() - float(prev_ts))
-    return max(dt / 86400.0, 1.0 / 1440.0)  # at least 1 minute
-
-def _dampen_delta(delta: float, threshold: float = OUTLIER_SOFT_THRESHOLD) -> float:
-    """Soft dampening: compress very large deltas without hard-clipping."""
-    ad = abs(delta)
-    if ad <= threshold:
-        return delta
-    # Beyond threshold, compress using a square-root curve (smooth, monotonic)
-    compressed = threshold + (ad - threshold) ** 0.5 * 5.0
-    return float(np.sign(delta) * compressed)
-
-def _cap_delta(delta: float, allowed: float) -> float:
-    if abs(delta) <= allowed:
-        return delta
-    return float(np.sign(delta) * allowed)
-
-def smooth_scores(new_scores: dict, prev_scores: dict | None, prev_ts: float | None) -> dict:
-    """Apply EMA smoothing + outlier dampening + max-delta cap to category scores (not including RGI)."""
-    if not prev_scores:
-        return new_scores
-
-    days = _dt_days(prev_ts)
-    allowed = max(MIN_CHANGE_FLOOR, MAX_DAILY_CHANGE * days)
-
-    smoothed = {}
-    for cat in CATEGORIES:
-        new_v = float(new_scores.get(cat, 0.0))
-        old_v = float(prev_scores.get(cat, new_v))
-
-        # 1) dampen outliers in the update step
-        raw_delta = new_v - old_v
-        damp_delta = _dampen_delta(raw_delta)
-
-        # 2) EMA on the dampened target
-        target = old_v + damp_delta
-        ema = old_v + EMA_ALPHA * (target - old_v)
-
-        # 3) cap maximum movement based on elapsed time
-        capped_delta = _cap_delta(ema - old_v, allowed)
-        smoothed[cat] = float(np.clip(old_v + capped_delta, 20, 90))
-
-    return smoothed
-
 def generate_invite_code(length: int = 8) -> str:
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 def compute_scores():
-    # --- Step 1: Compute "raw" category scores from the current assessment session
-    raw_cat_scores = {}
+    cat_scores = {}
     for cat in CATEGORIES:
         likert_vals = [st.session_state.likert_responses[q] for q in LIKERT_QUESTIONS[cat]]
         assess_vals = [st.session_state.assessment_responses[q] for q in ASSESSMENT_QUESTIONS[cat]]
@@ -270,36 +205,12 @@ def compute_scores():
             mutual = float(np.random.uniform(40, 80))
             score = 0.4 * score + 0.6 * mutual
 
-        raw_cat_scores[cat] = float(np.clip(score, 20, 90))
+        cat_scores[cat] = float(np.clip(score, 20, 90))
 
-    st.session_state.raw_scores = dict(raw_cat_scores)
-
-    # --- Step 2: Apply stability smoothing (EMA + dampening)
-    prev_scores = st.session_state.get("prev_scores")
-    prev_ts = st.session_state.get("prev_scores_ts")
-    smoothed_cats = smooth_scores(raw_cat_scores, prev_scores, prev_ts)
-
-    # --- Step 3: Compute RGI from the (smoothed) category scores
     weights = np.array([0.15, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10, 0.10], dtype=float)
-    rgi = float(np.sum(np.array([smoothed_cats[c] for c in CATEGORIES], dtype=float) * weights))
-
-    final_scores = dict(smoothed_cats)
-    final_scores["RGI"] = float(np.clip(rgi, 20, 90))
-
-    # --- Step 4: Persist the smoothed state for next computation (prototype: per session)
-    st.session_state.scores = final_scores
-    st.session_state.prev_scores = dict(smoothed_cats)
-    st.session_state.prev_scores_ts = _now_ts()
-
-    # Optional: keep a short history for debugging / future UI
-    hist = st.session_state.get("score_history", [])
-    hist.append({
-        "ts": st.session_state.prev_scores_ts,
-        "raw": dict(raw_cat_scores),
-        "smoothed": dict(smoothed_cats),
-        "rgi": final_scores["RGI"],
-    })
-    st.session_state.score_history = hist[-20:]
+    rgi = float(np.sum(np.array([cat_scores[c] for c in CATEGORIES], dtype=float) * weights))
+    cat_scores["RGI"] = rgi
+    st.session_state.scores = cat_scores
 
 def generate_insights():
     insights = []
@@ -558,29 +469,25 @@ def dashboard_page():
     display_logo()
     st.header("Dashboard")
 
-    if not st.session_state.scores:
+    scores = st.session_state.get("scores")
+
+    # Defensive: allow for direct navigation / partial state
+    if not isinstance(scores, dict) or not scores or "RGI" not in scores:
         st.warning("No results found yet. Please complete the assessment.")
-        if st.button("Go to Assessment", key="dash_go_assessment"):
-            nav("assessment")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Go to Assessment", key="dash_go_assessment"):
+                nav("assessment")
+        with c2:
+            if st.button("Return to Home", key="dash_home_fallback"):
+                nav("home" if st.session_state.get("logged_in") else "entry")
         return
 
-    st.markdown(f"<div class='rgi-big'>{st.session_state.scores['RGI']:.1f}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='rgi-big'>{scores['RGI']:.1f}</div>", unsafe_allow_html=True)
     st.caption("Relationship Growth Index")
 
-with st.expander("Stability smoothing (EMA) details", expanded=False):
-    st.write(f"EMA alpha: {EMA_ALPHA}")
-    st.write(f"Max daily change: {MAX_DAILY_CHANGE} points/day (min floor {MIN_CHANGE_FLOOR})")
-    if st.session_state.raw_scores:
-        st.caption("Raw vs smoothed category scores (prototype debug view)")
-        rows = []
-        for cat in CATEGORIES:
-            raw_v = float(st.session_state.raw_scores.get(cat, np.nan))
-            sm_v = float(st.session_state.scores.get(cat, np.nan))
-            rows.append({"Category": cat, "Raw": round(raw_v, 1), "Smoothed": round(sm_v, 1), "Delta": round(sm_v - raw_v, 1)})
-        st.dataframe(rows, use_container_width=True)
-
-    scores = st.session_state.scores
-    values = np.array([scores[cat] for cat in CATEGORIES], dtype=float)
+    # Radar chart
+    values = np.array([float(scores.get(cat, 0.0)) for cat in CATEGORIES], dtype=float)
     angles = np.linspace(0, 2 * np.pi, len(CATEGORIES), endpoint=False).tolist()
     values_loop = np.concatenate((values, [values[0]]))
     angles_loop = angles + angles[:1]
@@ -594,13 +501,13 @@ with st.expander("Stability smoothing (EMA) details", expanded=False):
     st.pyplot(fig)
 
     st.subheader("Key Insights")
-    for insight in (st.session_state.insights or []):
+    for insight in (st.session_state.get("insights") or []):
         st.markdown(
             f"""
             <div class="insight-card">
-                <div style="font-weight:700;">{insight['category']}: {insight['type']}</div>
-                <div>{insight['description']}</div>
-                <div><i>Suggestion: {insight['suggestion']}</i></div>
+                <div style="font-weight:700;">{insight.get('category','')}: {insight.get('type','')}</div>
+                <div>{insight.get('description','')}</div>
+                <div><i>Suggestion: {insight.get('suggestion','')}</i></div>
             </div>
             """,
             unsafe_allow_html=True
@@ -612,6 +519,7 @@ with st.expander("Stability smoothing (EMA) details", expanded=False):
 
     if st.button("Return to Home", key="dash_home"):
         nav("home")
+
 
 # -----------------------------
 # Router
