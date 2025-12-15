@@ -174,6 +174,9 @@ def _category_dynamic_color(category: str, score: float) -> str:
     intensity = float(np.clip((score - 20.0) / 70.0, 0.0, 1.0))  # 20->0, 90->1
     return _blend_hex(warm_neutral, base, intensity)
 
+def format_label(cat: str) -> str:
+    return cat.replace(" & ", " &\n")
+
 def draw_rq_wheel(ax, categories, scores_dict):
     """Draw an RQ Wheel with per-category colors + wedge fills."""
     n = len(categories)
@@ -233,10 +236,10 @@ def draw_rq_wheel(ax, categories, scores_dict):
 
         # Hex code
         hex_code = CATEGORY_COLORS.get(categories[i], "#000000")
-        ax.text(mid_angle, hex_r, hex_code, ha='center', va='center', fontsize=8, color='black', zorder=4)
+        ax.text(mid_angle, hex_r, hex_code, ha='center', va='center', fontsize=8, color='black', rotation=0, zorder=4)
 
-        # Category label (bold black)
-        ax.text(mid_angle, label_r, categories[i], ha='center', va='center', fontsize=10, fontweight='bold', color='black', zorder=4)
+        # Category label (bold black, multi-line)
+        ax.text(mid_angle, label_r, format_label(categories[i]), ha='center', va='center', fontsize=10, fontweight='bold', color='black', rotation=0, zorder=4)
 
 LIKERT_QUESTIONS = {
     cat: [
