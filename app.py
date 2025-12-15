@@ -77,6 +77,14 @@ def nav(to_page: str):
     _rerun()
 
 # -----------------------------
+# User Store (shared across sessions, mock for prototype)
+# -----------------------------
+@st.cache_resource
+def get_user_store():
+    # {username: password} - plain text for prototype, in real use hash
+    return {}
+
+# -----------------------------
 # Invite Store (shared across sessions)
 # -----------------------------
 INVITE_TTL_SECONDS = 60 * 30  # 30 minutes
@@ -282,6 +290,7 @@ def init_state():
         "prev_scores_ts": None,
         "score_history": [],
         "insights": None,
+        "username": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -461,33 +470,53 @@ def create_profile_page():
     st.header("Create your private profile")
     st.write("Your responses are encrypted and visible only by choice.")
 
+    username = st.text_input("Choose a username", key="create_username")
+    password = st.text_input("Choose a password", type="password", key="create_password")
     st.session_state.consent_accepted = st.checkbox(
         "I understand that my reflections are private, encrypted, and can be deleted at any time.",
         value=st.session_state.consent_accepted,
         key="consent_checkbox"
     )
 
+    disabled = not (username and password and st.session_state.consent_accepted)
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Back", key="create_back"):
             nav("entry")
     with c2:
-        if st.button("Continue", key="create_continue", disabled=not st.session_state.consent_accepted):
-            st.session_state.logged_in = True
-            nav("home")
+        if st.button("Continue", key="create_continue", disabled=disabled):
+            user_store = get_user_store()
+            if username in user_store:
+                st.error("Username already taken.")
+            else:
+                user_store[username] = password  # Plain text for prototype
+                st.session_state.username = username
+                st.session_state.logged_in = True
+                nav("home")
 
 def log_in_page():
     display_logo()
     st.header("Welcome back")
+
+    username = st.text_input("Username", key="login_username")
+    password = st.text_input("Password", type="password", key="login_password")
+
+    disabled = not (username and password)
 
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Back", key="login_back"):
             nav("entry")
     with c2:
-        if st.button("Log In", key="login_go"):
-            st.session_state.logged_in = True
-            nav("home")
+        if st.button("Log In", key="login_go", disabled=disabled):
+            user_store = get_user_store()
+            if username in user_store and user_store[username] == password:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                nav("home")
+            else:
+                st.error("Invalid username or password.")
 
 def home_page():
     """
@@ -547,6 +576,16 @@ def create_invite_page():
         if st.button("Enter Invite Code", key="invite_go_enter"):
             nav("enter_invite")
     tip_microcopy()
+
+    # Auto-transition when invite accepted
+    st.info("Waiting for partner to accept the invite...")
+    with st.spinner("Checking status..."):
+        time.sleep(5)
+        is_ok, reason = validate_invite(st.session_state.invite_code)
+        if reason == "used":
+            nav("reflection_start")
+        else:
+            _rerun()
 
 def enter_invite_page():
     display_logo()
@@ -695,7 +734,7 @@ def dashboard_page():
     scores = st.session_state.scores
     fig, ax = plt.subplots(figsize=(6.3, 6.3), subplot_kw=dict(polar=True))
     draw_rq_wheel(ax, CATEGORIES, scores)
-    st.pyplot(fig)
+    st.pyplot(fig, use_container_width=True)
 
     st.subheader("Key Insights")
     for insight in (st.session_state.insights or []):
