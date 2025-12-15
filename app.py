@@ -137,18 +137,16 @@ CATEGORIES = [
 
 # -----------------------------
 # RQ Wheel Color System (per category)
-# - Uses RelateScore palette where possible (Accent Blue / Mint / Gold)
-# - Adds distinct, premium-safe supporting colors for clear differentiation
 # -----------------------------
 CATEGORY_COLORS = {
-    "Emotional Awareness": "#2E6AF3",        # Accent Blue
-    "Communication Style": "#0C9A6F",        # Success Green
-    "Conflict Tendencies": "#E54646",        # Error Red
-    "Attachment Patterns": "#6B5B95",        # Deep Violet (supporting)
-    "Empathy & Responsiveness": "#A6E3DA",   # Mint
-    "Self-Insight": "#F4A623",               # Warning Amber
-    "Trust & Boundaries": "#C6A667",         # Gold
-    "Stability & Consistency": "#1A1A1A",    # Charcoal
+    "Emotional Awareness": "#4A90E2",
+    "Communication Style": "#7ED321",
+    "Conflict Tendencies": "#FF6B6B",
+    "Attachment Patterns": "#A29BFE",
+    "Empathy & Responsiveness": "#FFD700",
+    "Self-Insight": "#5A67D8",
+    "Trust & Boundaries": "#20C997",
+    "Stability & Consistency": "#A1887F"
 }
 
 def _hex_to_rgb01(hex_color: str):
@@ -170,8 +168,8 @@ def _category_dynamic_color(category: str, score: float) -> str:
     - Low scores bias toward a warm neutral (subtle)
     - High scores move toward the category's base color
     """
-    base = CATEGORY_COLORS.get(category, "#2E6AF3")
-    warm_neutral = "#FAFAF8"  # Warm Surface
+    base = CATEGORY_COLORS.get(category, "#4A90E2")
+    warm_neutral = "#F5F5F5"  # Light neutral base
     # Map score to intensity; keep conservative so it stays premium
     intensity = float(np.clip((score - 20.0) / 70.0, 0.0, 1.0))  # 20->0, 90->1
     return _blend_hex(warm_neutral, base, intensity)
@@ -187,8 +185,9 @@ def draw_rq_wheel(ax, categories, scores_dict):
     values_loop = np.concatenate([values, [values[0]]])
 
     # Background + grid styling
-    ax.set_facecolor("#FAFAF8")
-    ax.grid(True, linewidth=0.8, alpha=0.25)
+    ax.set_facecolor("#FAF7F2")
+    ax.grid(True, linewidth=0.8, alpha=0.25, color="#C9A96E")
+    ax.spines["polar"].set_color("#C9A96E")
     ax.spines["polar"].set_alpha(0.25)
     ax.set_ylim(0, 100)
     ax.set_yticks([20, 40, 60, 80, 100])
@@ -209,7 +208,7 @@ def draw_rq_wheel(ax, categories, scores_dict):
         ax.fill([a0, a0, a1, a1], [0, v0, v1, 0], color=col, alpha=0.22, linewidth=0)
 
     # Outline polygon (neutral premium stroke)
-    ax.plot(angles_loop, values_loop, linewidth=2.2, alpha=0.9)
+    ax.plot(angles_loop, values_loop, linewidth=2.2, alpha=0.9, color="#C9A96E")
 
     # Markers per axis in category color
     for i, cat in enumerate(categories):
